@@ -1,0 +1,82 @@
+services:
+  redis:
+    image: redis:alpine
+    command: [ "redis-server", "--appendonly", "yes", "--appendfsync", "everysec" ]
+    ports: [ "6379:6379" ]
+    volumes:
+      - redis_data:/data
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: orchestrator
+    ports: [ "5432:5432" ]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - RUN_MIGRATIONS_ON_STARTUP=true
+      - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
+      - REDIS_URL=redis://redis:6379/0
+      - INTERNAL_API_KEY=change-me
+      - VIDEO_GEN_V2_URL=http://video-gen:9000
+      - FAST_CHAT_LLM_URL=http://fast-chat:9000
+      - SUMMARIZER_PRO_URL=http://summarizer:9000
+      - PROMPT_ENHANCER_URL=http://prompt-enhancer:9000
+      - EMAIL_NOTIFIER_URL=http://email-notifier:9000
+    ports: [ "8000:8000" ]
+    volumes:
+      - .:/app
+    depends_on: [ redis, db ]
+
+  worker_heavy:
+    build: .
+    command: celery -A app.celery_app.celery_app worker -Q heavy --concurrency=2 --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
+      - REDIS_URL=redis://redis:6379/0
+      - INTERNAL_API_KEY=change-me
+    volumes:
+      - .:/app
+    depends_on: [ redis, db ]
+
+  worker_medium:
+    build: .
+    command: celery -A app.celery_app.celery_app worker -Q medium --concurrency=10 --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
+      - REDIS_URL=redis://redis:6379/0
+      - INTERNAL_API_KEY=change-me
+    volumes:
+      - .:/app
+    depends_on: [ redis, db ]
+
+  worker_default:
+    build: .
+    command: celery -A app.celery_app.celery_app worker -Q default --concurrency=50 --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
+      - REDIS_URL=redis://redis:6379/0
+      - INTERNAL_API_KEY=change-me
+    volumes:
+      - .:/app
+    depends_on: [ redis, db ]
+
+  beat:
+    build: .
+    command: celery -A app.celery_app.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on: [ redis, db ]
+
+volumes:
+  redis_data:
+  pg_data:
