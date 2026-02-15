@@ -14,40 +14,64 @@ HTTP_READ_TIMEOUT_S = float(os.getenv("HTTP_READ_TIMEOUT_S", "30.0"))
 
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
+# External API for user priority lookup
+PRIORITY_API_URL = os.getenv("PRIORITY_API_URL", "http://priority-service:8000")
+
+# Priority promotion thresholds (in seconds)
+PROMOTE_LOW_TO_MEDIUM_AFTER = int(os.getenv("PROMOTE_LOW_TO_MEDIUM_AFTER", "1800"))  # 30 min
+PROMOTE_MEDIUM_TO_HIGH_AFTER = int(os.getenv("PROMOTE_MEDIUM_TO_HIGH_AFTER", "3600"))  # 60 min
+
+# Celery queue names
+QUEUE_HIGH = "high_priority"
+QUEUE_MEDIUM = "medium_priority"
+QUEUE_LOW = "low_priority"
+
+# AI Service configurations - removed queue field, keeping concurrency limits
 SERVICES = {
-    "video_gen_v2": {
-        "limit": 2, "queue": "heavy", "timeout": 600, "lease_ttl": 660, "max_step_attempts": 3,
-        "base_url": os.getenv("VIDEO_GEN_V2_URL", "http://video-gen:9000"),
-        "execute_path": "/v1/execute", "health_path": "/health",
+    "prompt_enhancer": {
+        "limit": 5,
+        "timeout": 120,
+        "lease_ttl": 150,
+        "max_step_attempts": 3,
+        "base_url": os.getenv("PROMPT_ENHANCER_URL", "http://prompt-enhancer:9000"),
+        "execute_path": "/v1/execute",
+        "health_path": "/health",
         "auth": {"type": "api_key_header", "header": "X-Internal-Key"},
     },
     "fast_chat_llm": {
-        "limit": 15, "queue": "medium", "timeout": 15, "lease_ttl": 30, "max_step_attempts": 5,
+        "limit": 4,
+        "timeout": 180,
+        "lease_ttl": 210,
+        "max_step_attempts": 3,
         "base_url": os.getenv("FAST_CHAT_LLM_URL", "http://fast-chat:9000"),
-        "execute_path": "/v1/execute", "health_path": "/health",
+        "execute_path": "/v1/execute",
+        "health_path": "/health",
         "auth": {"type": "api_key_header", "header": "X-Internal-Key"},
     },
-    "summarizer_pro": {
-        "limit": 10, "queue": "medium", "timeout": 30, "lease_ttl": 60, "max_step_attempts": 5,
-        "base_url": os.getenv("SUMMARIZER_PRO_URL", "http://summarizer:9000"),
-        "execute_path": "/v1/execute", "health_path": "/health",
+    "image_gen": {
+        "limit": 1,
+        "timeout": 360,
+        "lease_ttl": 400,
+        "max_step_attempts": 2,
+        "base_url": os.getenv("IMAGE_GEN_URL", "http://image-gen:9000"),
+        "execute_path": "/v1/execute",
+        "health_path": "/health",
         "auth": {"type": "api_key_header", "header": "X-Internal-Key"},
     },
-    "prompt_enhancer": {
-        "limit": 50, "queue": "default", "timeout": 5, "lease_ttl": 15, "max_step_attempts": 6,
-        "base_url": os.getenv("PROMPT_ENHANCER_URL", "http://prompt-enhancer:9000"),
-        "execute_path": "/v1/execute", "health_path": "/health",
-        "auth": {"type": "api_key_header", "header": "X-Internal-Key"},
-    },
-    "email_notifier": {
-        "limit": 100, "queue": "default", "timeout": 5, "lease_ttl": 15, "max_step_attempts": 6,
-        "base_url": os.getenv("EMAIL_NOTIFIER_URL", "http://email-notifier:9000"),
-        "execute_path": "/v1/execute", "health_path": "/health",
+    "model_3d_gen": {
+        "limit": 1,
+        "timeout": 420,
+        "lease_ttl": 460,
+        "max_step_attempts": 2,
+        "base_url": os.getenv("MODEL_3D_GEN_URL", "http://model-3d-gen:9000"),
+        "execute_path": "/v1/execute",
+        "health_path": "/health",
         "auth": {"type": "api_key_header", "header": "X-Internal-Key"},
     },
 }
 
+# Multi-step pipeline definitions
 FEATURES = {
-    "business_plan": ["prompt_enhancer", "fast_chat_llm", "summarizer_pro", "email_notifier"],
-    "viral_video": ["prompt_enhancer", "video_gen_v2", "email_notifier"],
+    "full_pipeline": ["prompt_enhancer", "fast_chat_llm", "image_gen", "model_3d_gen"],
+    "text_only": ["prompt_enhancer", "fast_chat_llm"],
 }

@@ -23,6 +23,8 @@ class BaseTaskWithRetry(Task):
 
 @celery_app.task(bind=True, base=BaseTaskWithRetry, acks_late=True)
 def execute_job_step(self, job_id: str):
+    from app.config import QUEUE_HIGH, QUEUE_MEDIUM, QUEUE_LOW
+    
     with Session(engine) as session:
         repo = JobRepository(session)
         orchestrator = OrchestratorService(
@@ -34,15 +36,20 @@ def execute_job_step(self, job_id: str):
 
         result = orchestrator.execute_one_step(job_id)
         if result in ("OK", "SKIPPED_ALREADY_DONE"):
-            # queue next step
+            # queue next step to same priority queue
             job = repo.get(job_id)
             if not job:
                 return "JOB_NOT_FOUND"
             recipe = FEATURES[job.feature_name]
             if job.current_step_index < len(recipe):
-                next_service = recipe[job.current_step_index]
-                next_queue = SERVICES[next_service]["queue"]
-                execute_job_step.apply_async(args=[job_id], queue=next_queue)
+                # Route to priority queue based on job's current priority
+                queue_map = {
+                    "high": QUEUE_HIGH,
+                    "medium": QUEUE_MEDIUM,
+                    "low": QUEUE_LOW
+                }
+                target_queue = queue_map.get(job.priority, QUEUE_MEDIUM)
+                execute_job_step.apply_async(args=[job_id], queue=target_queue)
             else:
                 repo.set_status(job, JobStatus.COMPLETED)
         return result
@@ -76,3 +83,52 @@ def sanity_check_stuck_jobs():
                     "message": "Job paused due to inactivity. You can resume.",
                     "action": "RETRY_AVAILABLE"
                 })
+
+@celery_app.task
+def promote_waiting_jobs():
+    """
+    Periodic task to promote jobs that have waited too long.
+    Low → Medium after 30 min
+    Medium → High after 60 min
+    """
+    from app.config import QUEUE_HIGH, QUEUE_MEDIUM, QUEUE_LOW
+    
+    with Session(engine) as session:
+        repo = JobRepository(session)
+        ws = WSService()
+        
+        jobs_to_promote = repo.get_jobs_for_promotion()
+        
+        for job in jobs_to_promote:
+            old_priority = job.priority
+            
+            # Determine new priority
+            if job.priority == "low":
+                new_priority = "medium"
+            elif job.priority == "medium":
+                new_priority = "high"
+            else:
+                continue  # Already high
+            
+            # Promote job
+            repo.promote_job(job, new_priority)
+            
+            # Notify via WebSocket
+            ws.publish(job.id, {
+                "type": "JOB_PROMOTED",
+                "job_id": job.id,
+                "old_priority": old_priority,
+                "new_priority": new_priority,
+                "message": f"Job promoted from {old_priority} to {new_priority} due to wait time"
+            })
+            
+            # If job is still pending, re-queue to higher priority queue
+            if job.status == JobStatus.PENDING:
+                queue_map = {
+                    "high": QUEUE_HIGH,
+                    "medium": QUEUE_MEDIUM,
+                    "low": QUEUE_LOW
+                }
+                new_queue = queue_map[new_priority]
+                # Re-queue with higher priority
+                execute_job_step.apply_async(args=[job.id], queue=new_queue)

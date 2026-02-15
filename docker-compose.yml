@@ -24,45 +24,60 @@ services:
       - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
       - REDIS_URL=redis://redis:6379/0
       - INTERNAL_API_KEY=change-me
-      - VIDEO_GEN_V2_URL=http://video-gen:9000
-      - FAST_CHAT_LLM_URL=http://fast-chat:9000
-      - SUMMARIZER_PRO_URL=http://summarizer:9000
+      - PRIORITY_API_URL=http://priority-service:8000
       - PROMPT_ENHANCER_URL=http://prompt-enhancer:9000
-      - EMAIL_NOTIFIER_URL=http://email-notifier:9000
+      - FAST_CHAT_LLM_URL=http://fast-chat:9000
+      - IMAGE_GEN_URL=http://image-gen:9000
+      - MODEL_3D_GEN_URL=http://model-3d-gen:9000
     ports: [ "8000:8000" ]
     volumes:
       - .:/app
     depends_on: [ redis, db ]
 
-  worker_heavy:
+  # High priority worker (5 workers)
+  worker_high:
     build: .
-    command: celery -A app.celery_app.celery_app worker -Q heavy --concurrency=2 --loglevel=info
+    command: celery -A app.celery_app.celery_app worker -Q high_priority --concurrency=5 --loglevel=info
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
       - REDIS_URL=redis://redis:6379/0
       - INTERNAL_API_KEY=change-me
+      - PROMPT_ENHANCER_URL=http://prompt-enhancer:9000
+      - FAST_CHAT_LLM_URL=http://fast-chat:9000
+      - IMAGE_GEN_URL=http://image-gen:9000
+      - MODEL_3D_GEN_URL=http://model-3d-gen:9000
     volumes:
       - .:/app
     depends_on: [ redis, db ]
 
+  # Medium priority worker (5 workers)
   worker_medium:
     build: .
-    command: celery -A app.celery_app.celery_app worker -Q medium --concurrency=10 --loglevel=info
+    command: celery -A app.celery_app.celery_app worker -Q medium_priority --concurrency=5 --loglevel=info
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
       - REDIS_URL=redis://redis:6379/0
       - INTERNAL_API_KEY=change-me
+      - PROMPT_ENHANCER_URL=http://prompt-enhancer:9000
+      - FAST_CHAT_LLM_URL=http://fast-chat:9000
+      - IMAGE_GEN_URL=http://image-gen:9000
+      - MODEL_3D_GEN_URL=http://model-3d-gen:9000
     volumes:
       - .:/app
     depends_on: [ redis, db ]
 
-  worker_default:
+  # Low priority worker (3 workers)
+  worker_low:
     build: .
-    command: celery -A app.celery_app.celery_app worker -Q default --concurrency=50 --loglevel=info
+    command: celery -A app.celery_app.celery_app worker -Q low_priority --concurrency=3 --loglevel=info
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/orchestrator
       - REDIS_URL=redis://redis:6379/0
       - INTERNAL_API_KEY=change-me
+      - PROMPT_ENHANCER_URL=http://prompt-enhancer:9000
+      - FAST_CHAT_LLM_URL=http://fast-chat:9000
+      - IMAGE_GEN_URL=http://image-gen:9000
+      - MODEL_3D_GEN_URL=http://model-3d-gen:9000
     volumes:
       - .:/app
     depends_on: [ redis, db ]

@@ -59,3 +59,48 @@ class JobRepository(BaseRepository):
         job.updated_at = time.time()
         self.session.add(job)
         self.session.commit()
+    
+    def set_priority(self, job: Job, priority: str):
+        """Set job priority and update timestamp"""
+        job.priority = priority
+        job.updated_at = time.time()
+        self.session.add(job)
+        self.session.commit()
+        self.session.refresh(job)
+    
+    def promote_job(self, job: Job, new_priority: str):
+        """Promote job to higher priority"""
+        job.priority = new_priority
+        job.promoted_at = time.time()
+        job.updated_at = time.time()
+        self.session.add(job)
+        self.session.commit()
+        self.session.refresh(job)
+    
+    def get_jobs_for_promotion(self) -> list:
+        """Get jobs that need priority promotion based on wait time"""
+        from app.config import PROMOTE_LOW_TO_MEDIUM_AFTER, PROMOTE_MEDIUM_TO_HIGH_AFTER
+        from sqlmodel import select, or_, and_
+        
+        now = time.time()
+        
+        # Jobs that should be promoted
+        statement = select(Job).where(
+            and_(
+                Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
+                or_(
+                    # Low → Medium after 30 min
+                    and_(
+                        Job.priority == "low",
+                        Job.queued_at < now - PROMOTE_LOW_TO_MEDIUM_AFTER
+                    ),
+                    # Medium → High after 60 min
+                    and_(
+                        Job.priority == "medium",
+                        Job.original_priority != "high",  # Don't promote already-high jobs
+                        Job.queued_at < now - PROMOTE_MEDIUM_TO_HIGH_AFTER
+                    )
+                )
+            )
+        )
+        return list(self.session.exec(statement).all())
